@@ -86,7 +86,7 @@ const confirmBooking = async (seatNumber) => {
     </div>
   </div>
 </template>
-
+--- ----
 <style scoped>
 .container {
   padding: 20px;
