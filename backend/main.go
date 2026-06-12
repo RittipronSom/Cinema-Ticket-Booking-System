@@ -10,12 +10,13 @@ import (
 )
 
 func main() {
+	
 	err := database.ConnectMongo()
 
 	if err != nil {
 		panic(err)
 	}
-	r := gin.Default()
+	r := gin.Default()	
 
 	// เปิดใช้งาน CORS
 	r.Use(cors.Default())
@@ -30,6 +31,7 @@ func main() {
 	r.POST("/lock-seat", handler.LockSeat)
 	r.GET("/ws", handler.HandleWebSocket)
 	r.POST("/confirm-booking", handler.ConfirmBooking)
+	r.GET("/bookings", handler.GetBookings)
 
 	r.Run(":8080")
 }

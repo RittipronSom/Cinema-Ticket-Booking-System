@@ -21,12 +21,12 @@ var seats = []models.Seat{
 	{
 		ID:         2,
 		SeatNumber: "A2",
-		Status:     "BOOKED",
+		Status:     "AVAILABLE",
 	},
 	{
 		ID:         3,
 		SeatNumber: "A3",
-		Status:     "LOCKED",
+		Status:     "AVAILABLE",
 	},
 	{
 		ID:         4,
@@ -36,30 +36,40 @@ var seats = []models.Seat{
 }
 
 func GetSeats(c *gin.Context) {
+    collection := database.DB.Collection("bookings")
 
-	for i, seat := range seats {
+    // ดึงที่นั่งที่ BOOKED จาก MongoDB
+    cursor, err := collection.Find(
+        context.Background(),
+        map[string]interface{}{"status": "BOOKED"},
+    )
 
-		lockKey := "seat:" + seat.SeatNumber
+    bookedSeats := map[string]bool{}
+    if err == nil {
+        var bookings []models.Booking
+        cursor.All(context.Background(), &bookings)
+        for _, b := range bookings {
+            bookedSeats[b.SeatNumber] = true
+        }
+    }
 
-		exists, err := redisClient.Client.Exists(
-			redisClient.Ctx,
-			lockKey,
-		).Result()
+    for i, seat := range seats {
+        if bookedSeats[seat.SeatNumber] {
+            seats[i].Status = "BOOKED"
+            continue
+        }
 
-		if err != nil {
-			continue
-		}
+        // เช็ค Redis lock
+        lockKey := "seat:" + seat.SeatNumber
+        exists, err := redisClient.Client.Exists(redisClient.Ctx, lockKey).Result()
+        if err == nil && exists == 1 {
+            seats[i].Status = "LOCKED"
+        } else {
+            seats[i].Status = "AVAILABLE"
+        }
+    }
 
-		if exists == 1 {
-			seats[i].Status = "LOCKED"
-		} else {
-			if seats[i].Status != "BOOKED" {
-				seats[i].Status = "AVAILABLE"
-			}
-		}
-	}
-
-	c.JSON(http.StatusOK, seats)
+    c.JSON(http.StatusOK, seats)
 }
 
 func LockSeat(c *gin.Context) {
@@ -72,6 +82,18 @@ func LockSeat(c *gin.Context) {
 			"error": "Invalid request",
 		})
 		return
+	}
+	for _, seat := range seats {
+
+		if seat.SeatNumber == request.SeatNumber &&
+			seat.Status == "BOOKED" {
+
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Seat already booked",
+			})
+
+			return
+		}
 	}
 
 	lockKey := "seat:" + request.SeatNumber
@@ -94,6 +116,11 @@ func LockSeat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Seat already locked",
 		})
+		SaveAuditLog(
+			"LOCK_FAILED",
+			request.SeatNumber,
+			"User tried locking already locked seat",
+		)
 		return
 	}
 
@@ -102,6 +129,11 @@ func LockSeat(c *gin.Context) {
 			seats[i].Status = "LOCKED"
 		}
 	}
+	SaveAuditLog(
+		"SEAT_LOCKED",
+		request.SeatNumber,
+		"Seat locked successfully",
+	)
 	BroadcastSeatUpdate()
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Seat locked successfully",
@@ -121,7 +153,7 @@ func ConfirmBooking(c *gin.Context) {
 		return
 	}
 
-	for i, seat := range seats {
+	for _, seat := range seats {
 
 		if seat.SeatNumber == request.SeatNumber {
 
@@ -142,20 +174,42 @@ func ConfirmBooking(c *gin.Context) {
 			}
 
 			if exists == 0 {
-
+				SaveAuditLog(
+					"BOOKING_FAILED",
+					request.SeatNumber,
+					"User tried booking expired lock seat",
+				)
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "Seat is not locked",
+					"error": "ที่นั่งนี้หมดเวลาในการจองแล้ว กรุณาลองใหม่อีกครั้ง",
 				})
 
 				return
 			}
 
-			seats[i].Status = "BOOKED"
-			redisClient.Client.Del(
-				redisClient.Ctx,
-				lockKey,
-			)
 		}
+	}
+
+	collection := database.DB.Collection("bookings")
+
+	existingBooking := collection.FindOne(
+		context.Background(),
+		gin.H{
+			"seat_number": request.SeatNumber,
+			"status":      "BOOKED",
+		},
+	)
+
+	if existingBooking.Err() == nil {
+		SaveAuditLog(
+			"BOOKING_FAILED",
+			request.SeatNumber,
+			"ที่นั่งนี้ถูกจองแล้ว",
+		)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "ที่นั่งนี้ถูกจองแล้ว",
+		})
+
+		return
 	}
 
 	booking := models.Booking{
@@ -163,8 +217,6 @@ func ConfirmBooking(c *gin.Context) {
 		SeatNumber: request.SeatNumber,
 		Status:     "BOOKED",
 	}
-
-	collection := database.DB.Collection("bookings")
 
 	_, err := collection.InsertOne(
 		context.Background(),
@@ -177,10 +229,76 @@ func ConfirmBooking(c *gin.Context) {
 		})
 		return
 	}
+	for i, seat := range seats {
 
+		if seat.SeatNumber == request.SeatNumber {
+
+			seats[i].Status = "BOOKED"
+		}
+	}
+	lockKey := "seat:" + request.SeatNumber
+	redisClient.Client.Del(
+		redisClient.Ctx,
+		lockKey,
+	)
+	SaveAuditLog(
+		"BOOKING_SUCCESS",
+		request.SeatNumber,
+		"Booking completed successfully",
+	)
 	BroadcastSeatUpdate()
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "จองที่นั่งสำเร็จ",
 	})
+}
+func GetBookings(c *gin.Context) {
+
+	collection := database.DB.Collection("bookings")
+
+	cursor, err := collection.Find(
+		context.Background(),
+		map[string]interface{}{},
+	)
+
+	if err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch bookings",
+		})
+
+		return
+	}
+
+	var bookings []models.Booking
+
+	if err := cursor.All(context.Background(), &bookings); err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to decode bookings",
+		})
+
+		return
+	}
+
+	c.JSON(http.StatusOK, bookings)
+}
+func SaveAuditLog(
+	event string,
+	seatNumber string,
+	description string,
+) {
+
+	collection := database.DB.Collection("audit_logs")
+
+	log := models.AuditLog{
+		Event:       event,
+		SeatNumber:  seatNumber,
+		Description: description,
+	}
+
+	collection.InsertOne(
+		context.Background(),
+		log,
+	)
 }
