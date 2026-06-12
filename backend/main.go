@@ -2,7 +2,7 @@ package main
 
 import (
 	"net/http"
-
+	"cinema-ticket-booking-system/internal/queue"
 	"cinema-ticket-booking-system/internal/database"
 	"cinema-ticket-booking-system/internal/handler"
 	"github.com/gin-contrib/cors"
@@ -32,6 +32,6 @@ func main() {
 	r.GET("/ws", handler.HandleWebSocket)
 	r.POST("/confirm-booking", handler.ConfirmBooking)
 	r.GET("/bookings", handler.GetBookings)
-
+	go queue.StartBookingSubscriber()
 	r.Run(":8080")
 }

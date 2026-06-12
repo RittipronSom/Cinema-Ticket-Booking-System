@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"cinema-ticket-booking-system/internal/database"
+	"cinema-ticket-booking-system/internal/models"
+	"cinema-ticket-booking-system/internal/queue"
+	redisClient "cinema-ticket-booking-system/internal/redis"
 	"context"
 	"net/http"
 	"time"
-
-	"cinema-ticket-booking-system/internal/database"
-	"cinema-ticket-booking-system/internal/models"
-	redisClient "cinema-ticket-booking-system/internal/redis"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,40 +36,40 @@ var seats = []models.Seat{
 }
 
 func GetSeats(c *gin.Context) {
-    collection := database.DB.Collection("bookings")
+	collection := database.DB.Collection("bookings")
 
-    // ดึงที่นั่งที่ BOOKED จาก MongoDB
-    cursor, err := collection.Find(
-        context.Background(),
-        map[string]interface{}{"status": "BOOKED"},
-    )
+	// ดึงที่นั่งที่ BOOKED จาก MongoDB
+	cursor, err := collection.Find(
+		context.Background(),
+		map[string]interface{}{"status": "BOOKED"},
+	)
 
-    bookedSeats := map[string]bool{}
-    if err == nil {
-        var bookings []models.Booking
-        cursor.All(context.Background(), &bookings)
-        for _, b := range bookings {
-            bookedSeats[b.SeatNumber] = true
-        }
-    }
+	bookedSeats := map[string]bool{}
+	if err == nil {
+		var bookings []models.Booking
+		cursor.All(context.Background(), &bookings)
+		for _, b := range bookings {
+			bookedSeats[b.SeatNumber] = true
+		}
+	}
 
-    for i, seat := range seats {
-        if bookedSeats[seat.SeatNumber] {
-            seats[i].Status = "BOOKED"
-            continue
-        }
+	for i, seat := range seats {
+		if bookedSeats[seat.SeatNumber] {
+			seats[i].Status = "BOOKED"
+			continue
+		}
 
-        // เช็ค Redis lock
-        lockKey := "seat:" + seat.SeatNumber
-        exists, err := redisClient.Client.Exists(redisClient.Ctx, lockKey).Result()
-        if err == nil && exists == 1 {
-            seats[i].Status = "LOCKED"
-        } else {
-            seats[i].Status = "AVAILABLE"
-        }
-    }
+		// เช็ค Redis lock
+		lockKey := "seat:" + seat.SeatNumber
+		exists, err := redisClient.Client.Exists(redisClient.Ctx, lockKey).Result()
+		if err == nil && exists == 1 {
+			seats[i].Status = "LOCKED"
+		} else {
+			seats[i].Status = "AVAILABLE"
+		}
+	}
 
-    c.JSON(http.StatusOK, seats)
+	c.JSON(http.StatusOK, seats)
 }
 
 func LockSeat(c *gin.Context) {
@@ -245,6 +245,9 @@ func ConfirmBooking(c *gin.Context) {
 		"BOOKING_SUCCESS",
 		request.SeatNumber,
 		"Booking completed successfully",
+	)
+	queue.PublishBookingEvent(
+		"New booking confirmed: " + request.SeatNumber,
 	)
 	BroadcastSeatUpdate()
 
