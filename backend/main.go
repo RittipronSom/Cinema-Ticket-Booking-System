@@ -53,6 +53,7 @@ func main() {
 		authGroup.POST("/lock-seat", handler.LockSeat)
 		authGroup.POST("/confirm-booking", handler.ConfirmBooking)
 	}
+	authGroup.POST("/unlock-seat", handler.UnlockSeat)
 
 	// Admin Routes
 	r.GET("/bookings", middleware.AdminOnly(), handler.GetBookings)

@@ -324,6 +324,30 @@ func StartLockExpiryWatcher() {
         }
     }()
 }
+func UnlockSeat(c *gin.Context) {
+    var request struct {
+        SeatNumber string `json:"seat_number"`
+    }
+
+    if err := c.ShouldBindJSON(&request); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+        return
+    }
+
+    lockKey := "seat:" + request.SeatNumber
+    redisClient.Client.Del(redisClient.Ctx, lockKey)
+
+    for i, seat := range seats {
+        if seat.SeatNumber == request.SeatNumber && seat.Status == "LOCKED" {
+            seats[i].Status = "AVAILABLE"
+        }
+    }
+
+    SaveAuditLog("SEAT_UNLOCKED", request.SeatNumber, "User cancelled lock")
+    BroadcastSeatUpdate()
+
+    c.JSON(http.StatusOK, gin.H{"message": "Seat unlocked"})
+}
 func SaveAuditLog(
 	event string,
 	seatNumber string,
