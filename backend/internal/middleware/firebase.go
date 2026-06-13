@@ -14,7 +14,7 @@ import (
 var firebaseAuth *auth.Client
 
 func InitFirebase() error {
-	opt := option.WithCredentialsFile("cinema-booking-8749c-firebase-adminsdk-fbsvc-c2fe068d17.json")
+	opt := option.WithCredentialsFile("serviceAccountKey.json")
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
 		return err

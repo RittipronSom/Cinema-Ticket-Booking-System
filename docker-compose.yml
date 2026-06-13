@@ -21,8 +21,7 @@ services:
       - MONGO_URI=mongodb://mongo:27017
       - REDIS_ADDR=redis:6379
     volumes:
-      - ./backend/cinema-booking-8749c-firebase-adminsdk-fbsvc-c2fe068d17.json:/app/cinema-booking-8749c-firebase-adminsdk-fbsvc-c2fe068d17.json
-
+      - ./backend/serviceAccountKey.json:/app/serviceAccountKey.json
   frontend:
     build: ./frontend
     ports:
