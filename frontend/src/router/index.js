@@ -1,6 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import AdminView from '../views/AdminView.vue'
+import { auth } from '../firebase'
+import { onAuthStateChanged } from 'firebase/auth'
+
+const ADMIN_EMAILS = ['foj3010@gmail.com'] // ใส่ email admin จริงๆ
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -14,16 +18,25 @@ const router = createRouter({
       path: '/admin',
       name: 'admin',
       component: AdminView,
-    },
-    {
-      path: '/about',
-      name: 'about',
-      // route level code-splitting
-      // this generates a separate chunk (About.[hash].js) for this route
-      // which is lazy-loaded when the route is visited.
-      component: () => import('../views/AboutView.vue'),
+      meta: { requiresAdmin: true }
     },
   ],
 })
 
+router.beforeEach((to, from, next) => {
+  if (to.meta.requiresAdmin) {
+    // รอ Firebase โหลดเสร็จก่อน
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe()
+      console.log('user in guard:', user?.email)
+      if (!user || !ADMIN_EMAILS.includes(user.email)) {
+        next('/')
+      } else {
+        next()
+      }
+    })
+  } else {
+    next()
+  }
+})
 export default router

@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"cinema-ticket-booking-system/internal/database"
-	"cinema-ticket-booking-system/internal/models"
-	"cinema-ticket-booking-system/internal/queue"
-	redisClient "cinema-ticket-booking-system/internal/redis"
 	"context"
 	"net/http"
 	"time"
+	"cinema-ticket-booking-system/internal/queue"
+	"cinema-ticket-booking-system/internal/database"
+	"cinema-ticket-booking-system/internal/models"
+	redisClient "cinema-ticket-booking-system/internal/redis"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,40 +36,40 @@ var seats = []models.Seat{
 }
 
 func GetSeats(c *gin.Context) {
-	collection := database.DB.Collection("bookings")
+    collection := database.DB.Collection("bookings")
 
-	// ดึงที่นั่งที่ BOOKED จาก MongoDB
-	cursor, err := collection.Find(
-		context.Background(),
-		map[string]interface{}{"status": "BOOKED"},
-	)
+    // ดึงที่นั่งที่ BOOKED จาก MongoDB
+    cursor, err := collection.Find(
+        context.Background(),
+        map[string]interface{}{"status": "BOOKED"},
+    )
 
-	bookedSeats := map[string]bool{}
-	if err == nil {
-		var bookings []models.Booking
-		cursor.All(context.Background(), &bookings)
-		for _, b := range bookings {
-			bookedSeats[b.SeatNumber] = true
-		}
-	}
+    bookedSeats := map[string]bool{}
+    if err == nil {
+        var bookings []models.Booking
+        cursor.All(context.Background(), &bookings)
+        for _, b := range bookings {
+            bookedSeats[b.SeatNumber] = true
+        }
+    }
 
-	for i, seat := range seats {
-		if bookedSeats[seat.SeatNumber] {
-			seats[i].Status = "BOOKED"
-			continue
-		}
+    for i, seat := range seats {
+        if bookedSeats[seat.SeatNumber] {
+            seats[i].Status = "BOOKED"
+            continue
+        }
 
-		// เช็ค Redis lock
-		lockKey := "seat:" + seat.SeatNumber
-		exists, err := redisClient.Client.Exists(redisClient.Ctx, lockKey).Result()
-		if err == nil && exists == 1 {
-			seats[i].Status = "LOCKED"
-		} else {
-			seats[i].Status = "AVAILABLE"
-		}
-	}
+        // เช็ค Redis lock
+        lockKey := "seat:" + seat.SeatNumber
+        exists, err := redisClient.Client.Exists(redisClient.Ctx, lockKey).Result()
+        if err == nil && exists == 1 {
+            seats[i].Status = "LOCKED"
+        } else {
+            seats[i].Status = "AVAILABLE"
+        }
+    }
 
-	c.JSON(http.StatusOK, seats)
+    c.JSON(http.StatusOK, seats)
 }
 
 func LockSeat(c *gin.Context) {
@@ -102,7 +102,7 @@ func LockSeat(c *gin.Context) {
 		redisClient.Ctx,
 		lockKey,
 		"locked",
-		10*time.Second,
+		5*time.Minute, // กำหนดเวลาล็อค 5 นาที
 	).Result()
 
 	if err != nil {
@@ -222,6 +222,7 @@ func ConfirmBooking(c *gin.Context) {
 		context.Background(),
 		booking,
 	)
+	queue.PublishBookingEvent(request.UserID, request.SeatNumber, "BOOKING_SUCCESS")
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -246,9 +247,7 @@ func ConfirmBooking(c *gin.Context) {
 		request.SeatNumber,
 		"Booking completed successfully",
 	)
-	queue.PublishBookingEvent(
-		"New booking confirmed: " + request.SeatNumber,
-	)
+	
 	BroadcastSeatUpdate()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -285,6 +284,45 @@ func GetBookings(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, bookings)
+}
+func StartLockExpiryWatcher() {
+    go func() {
+        for {
+            time.Sleep(3 * time.Second) // เช็คทุก 3 วินาที
+
+            changed := false
+
+            for i, seat := range seats {
+                if seat.Status == "LOCKED" {
+                    lockKey := "seat:" + seat.SeatNumber
+
+                    exists, err := redisClient.Client.Exists(
+                        redisClient.Ctx,
+                        lockKey,
+                    ).Result()
+
+                    if err != nil {
+                        continue
+                    }
+
+                    // Redis key หมดอายุแล้ว → คืนสถานะ
+                    if exists == 0 {
+                        seats[i].Status = "AVAILABLE"
+                        changed = true
+                        SaveAuditLog(
+                            "SEAT_RELEASED",
+                            seat.SeatNumber,
+                            "Lock expired, seat released",
+                        )
+                    }
+                }
+            }
+
+            if changed {
+                BroadcastSeatUpdate() // แจ้ง frontend ทันที
+            }
+        }
+    }()
 }
 func SaveAuditLog(
 	event string,

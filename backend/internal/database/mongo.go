@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"time"
-
+	"os"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -14,7 +14,7 @@ func ConnectMongo() error {
 
 	client, err := mongo.Connect(
 		context.Background(),
-		options.Client().ApplyURI("mongodb://localhost:27017"),
+		options.Client().ApplyURI(os.Getenv("MONGO_URI")),
 	)
 
 	if err != nil {

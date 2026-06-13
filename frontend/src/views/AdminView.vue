@@ -5,12 +5,14 @@ const bookings = ref([]);
 const seatFilter = ref("");
 
 const fetchBookings = async () => {
-  const response = await fetch("http://localhost:8080/bookings");
-
-  const data = await response.json();
-
-  bookings.value = data;
-};
+  const response = await fetch("http://localhost:8080/bookings", {
+    headers: {
+      "X-Admin-Secret": "cinema-admin-2024"
+    }
+  })
+  const data = await response.json()
+  bookings.value = data
+}
 
 const filteredBookings = computed(() => {
   if (!seatFilter.value) {
@@ -23,6 +25,7 @@ const filteredBookings = computed(() => {
 });
 
 onMounted(() => {
+  console.log('AdminView mounted');
   fetchBookings();
 });
 </script>
