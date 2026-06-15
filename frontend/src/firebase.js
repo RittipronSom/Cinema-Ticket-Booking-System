@@ -2,12 +2,12 @@ import { initializeApp } from "firebase/app"
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth"
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCAYhwqNpEyeqK3fUQWy5bJykKJFMaslQw",
-  authDomain: "cinema-booking-8749c.firebaseapp.com",
-  projectId: "cinema-booking-8749c",
-  storageBucket: "cinema-booking-8749c.firebasestorage.app",
-  messagingSenderId: "156148471969",
-  appId: "1:156148471969:web:a908ba759095faf0c478e0"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 }
 
 const app = initializeApp(firebaseConfig)
