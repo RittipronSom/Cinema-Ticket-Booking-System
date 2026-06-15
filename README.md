@@ -1,4 +1,4 @@
-# 🎬 Cinema Ticket Booking System
+# Cinema Ticket Booking System
 
 ระบบจองตั๋วภาพยนตร์ออนไลน์ที่รองรับการจองพร้อมกันหลายคนโดยไม่เกิด Double Booking
 
